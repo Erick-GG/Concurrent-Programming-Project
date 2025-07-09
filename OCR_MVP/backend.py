@@ -13,7 +13,7 @@ from fpdf import FPDF
 # https://github.com/UB-Mannheim/tesseract/wiki
 # Info/tuto de tesseract
 # https://nanonets.com/blog/ocr-with-tesseract/
-pytesseract.pytesseract.tesseract_cmd = r"C:\Users\erikg\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"
 CATEGORIAS = {
     "alimentos": ["pan", "tortilla", "refresco", "galleta", "pollo", "coca", "comida"],
     "hogar": ["foco", "cloro", "trapeador", "servilleta", "detergente"],
@@ -49,13 +49,13 @@ def procesar_ticket(path_imagen):
                 continue
 
             # Buscar total
-            if re.search(r"total", linea, re.IGNORECASE):
+            if re.match(r"^\s*total[:\s]", linea, re.IGNORECASE):
                 numeros = re.findall(r"\d+[.,]?\d*", linea)
                 if numeros:
                     ticket["total"] = float(numeros[-1].replace(",", "."))
 
             # Buscar productos con formato simple: nombre cantidad precio
-            match = re.match(r"([\w\s]+)\s+(\d+)\s+(\d+[.,]?\d*)", linea)
+            match = re.match(r"([\w\s]+?)\s+(\d+)\s+\$?(\d+[.,]?\d*)", linea)
             if match:
                 nombre = match.group(1).strip()
                 cantidad = int(match.group(2))
@@ -86,35 +86,41 @@ def generar_reporte_pdf(tickets, salida_pdf):
 
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, text="Reporte de gastos por categoria", ln=True, align='C')
+    pdf.set_font("Helvetica", size=12)  # más seguro que Arial
+    pdf.cell(200, 10, "Reporte de gastos por categoría", ln=True, align='C')
     pdf.ln(10)
+
     for cat, total in resumen.items():
         pdf.cell(200, 10, txt=f"{cat.capitalize()}: ${total:.2f}", ln=True)
+
     pdf.ln(10)
     pdf.cell(200, 10, txt=f"Gasto total: ${total_gastos:.2f}", ln=True)
     pdf.output(salida_pdf)
 
 
-def main():
-    carpeta_tickets = input("Ingresa el path a la carpeta con los tickets: ").strip()
-    carpeta_salida = input("Ingresa el path de salida para el PDF generado: ").strip()
+def main(carpeta_tickets, carpeta_salida):
+    def run():
+        archivos = [os.path.join(carpeta_tickets, f) for f in os.listdir(carpeta_tickets)
+                    if f.lower().endswith((".jpg", ".png", ".jpeg"))]
 
-    archivos = [os.path.join(carpeta_tickets, f) for f in os.listdir(carpeta_tickets) if f.lower().endswith((".jpg", ".png", ".jpeg"))]
+        print(f"Procesando {len(archivos)} tickets...")
 
-    print(f"Procesando {len(archivos)} tickets...")
-    with multiprocessing.Pool() as pool:
-        resultados = pool.map(procesar_ticket, archivos)
+        with multiprocessing.Pool() as pool:
+            resultados = pool.map(procesar_ticket, archivos)
 
-    os.makedirs(os.path.join(carpeta_salida, "jsons"), exist_ok=True)
-    for ticket in resultados:
-        if "archivo" in ticket:
-            nombre_json = ticket["archivo"].rsplit(".", 1)[0] + ".json"
-            with open(os.path.join(carpeta_salida, "jsons", nombre_json), "w", encoding="utf-8") as f:
-                json.dump(ticket, f, indent=2, ensure_ascii=False)
+        os.makedirs(os.path.join(carpeta_salida, "jsons"), exist_ok=True)
+        for ticket in resultados:
+            if "archivo" in ticket:
+                nombre_json = ticket["archivo"].rsplit(".", 1)[0] + ".json"
+                with open(os.path.join(carpeta_salida, "jsons", nombre_json), "w", encoding="utf-8") as f:
+                    json.dump(ticket, f, indent=2, ensure_ascii=False)
 
-    generar_reporte_pdf(resultados, os.path.join(carpeta_salida, "reporte_gastos.pdf"))
-    print("Procesamiento terminado. Se ha generado un PDf y JSONs.")
+        generar_reporte_pdf(resultados, os.path.join(carpeta_salida, "reporte_gastos.pdf"))
+        print("Procesamiento terminado. Se ha generado un PDF y JSONs.")
 
-if __name__ == "__main__":
-    main()
+    if __name__ == "__main__":
+        from multiprocessing import freeze_support
+        freeze_support()
+        run()
+    else:
+        run()
